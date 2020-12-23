@@ -116,6 +116,7 @@ int main()
         libr.get_info(libr.take_one());
         libr.delete_previous();
     }
+    std::cout << "Test commiting";
     return 0;
 }
 
