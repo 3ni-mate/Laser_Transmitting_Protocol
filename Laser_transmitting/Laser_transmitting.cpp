@@ -1,5 +1,5 @@
 ﻿// Laser_transmitting.cpp : Этот файл содержит функцию "main". Здесь начинается и заканчивается выполнение программы.
-//
+// Есть небольшая проблема символ табуляции - исправлено 
 
 #include <string>
 #include <vector>
@@ -25,35 +25,62 @@ public:
     std::vector <Packet> send_packs;
     Packet take_one(); // Выдает верхний пакет из массива
     void delete_previous(); // Удаляет верхний пакет из массива
-    void get_info(const Packet& pack);
+    void get_info(const Packet& pack); // Показывает информацио о пакете
+    void add_pack(const Packet& pack); // Добавляет пакет в библиотеку
 };
 
 
-class Input_Handler : public Core {
+class Handler : public Core {
 public:
     int counter = 0;
     const int data_pack = 1;
     void pack_the_message(std::string& message, std::vector <Packet>& send_message);
+    std::string unpack_the_message(Librarian& libr); // Функция возвращающая строку
 };
 
 
-class Input_Transmitter : public Core {
+class Transmitter : public Core {
 public:
-    void make_the_library(std::string& message, Input_Handler& handler, Librarian& libs);
+    void make_the_library(std::string& message, Handler& handler, Librarian& libs);
+    void libs_add_pack(const Packet& pack, Librarian& libr); // Процедура, нужная для взаимодействия с библиотекарем(чтобы библиотекаря полностью  скрыть из main)
+    
+    void libs_get_info(const Packet& pack, Librarian& libr); // Процедура, выводящая первый пакет заданного библиотекаря
+    void libs_delete_previous(Librarian& libr); // Процедура, удаляющая первый пакет заданного библиотекаря
+    unsigned int libs_get_lib_size(Librarian& libr); // Функция, выдающая размер библиотеки заданного библиотекаря
+    Packet libs_take_one(Librarian& libr); // Функция, выдающая пакет из заданного библиотекаря
+    std::string unpack_lib(Handler& hand, Librarian& libr);
 };
 
 
 
 
 
-void Input_Transmitter::make_the_library(std::string& message, Input_Handler& handler, Librarian& libs) {
-    while (message[message.size() - 1] == ' ') {
-        message.substr(0, message.size() - 1);
+void Transmitter::make_the_library(std::string& message, Handler& handler, Librarian& libs) {
+    while ((message[message.size() - 1] == ' ') || (message[message.size() - 1] == '\t')) { // Пробел и символ табуляции
+        message.erase(message.size() - 2, message.size() - 1);
     }
     handler.pack_the_message(message, libs.send_packs);// сразу передаем в процедуру массив для библиотекаря
 }
+void Transmitter::libs_add_pack(const Packet& pack, Librarian& libr) {
+    libr.add_pack(pack);
+}
+void Transmitter::libs_get_info(const Packet& pack, Librarian& libr) {
+    libr.get_info(pack);
+}
+void Transmitter::libs_delete_previous( Librarian& libr) {
+    libr.delete_previous();
+}
+unsigned int Transmitter::libs_get_lib_size(Librarian& libr) {
+    return libr.send_packs.size();
+}
+Packet Transmitter::libs_take_one(Librarian& libr) {
+    return libr.take_one();
+}
+std::string Transmitter::unpack_lib(Handler& hand, Librarian& libr) {
+    return hand.unpack_the_message(libr);
+}
 
-void Input_Handler::pack_the_message(std::string& message, std::vector <Packet>& send_message) {
+void Handler::pack_the_message(std::string& message, std::vector <Packet>& send_message) {
     unsigned int Length = (message.size() + 15) / 16; // Округление в большую сторону
     send_message.resize(Length);
     for (unsigned int i = 0; i < Length; i++) {
@@ -69,6 +96,15 @@ void Input_Handler::pack_the_message(std::string& message, std::vector <Packet>&
         counter++;
     }
 }
+std::string Handler::unpack_the_message(Librarian& libr) {
+    std::string return_message;
+    for (int i = 0; i < libr.send_packs.size(); i++) {
+        for (int j = 0; j < 16; j++) {
+            return_message += libr.send_packs[i].includes[j];
+        }
+    }
+    return return_message;
+}
 
 Packet Librarian::take_one() {
     if (send_packs.empty()) {
@@ -79,8 +115,6 @@ Packet Librarian::take_one() {
     }
     return send_packs[0]; // Возвращение первого пакета || При получении проверять пустой ли пакет или нет
 }
-
-
 void Librarian::delete_previous() {
     if (send_packs.size() > 1) {
         auto i = send_packs.cbegin(); // Тарабарщина, которая возвращает иератор вектора на 1 элемент ||  auto тк я хз что за тип функция возвращает
@@ -88,22 +122,26 @@ void Librarian::delete_previous() {
     }
     else send_packs.clear();
 }
-
 void Librarian::get_info(const Packet& pack) {
     std::cout << '\n';
-    std::cout << "----------------------------------------------" << '\n';
+    std::cout << "<---------------------------------------------->" << '\n';
     std::cout << "header --->  " << pack.header << '\n';
     std::cout << "number --->  " << pack.number << '\n';
-    std::cout << "data --->  ";
+    std::cout << "data   --->  ";
     for (int i = 0; i < 16; i++) {
         std::cout << pack.includes[i];
     }
+    std::cout << "<" << '\n'; // Показывет на недостающие символы
 }
+void Librarian::add_pack(const Packet& pack) {
+    send_packs.push_back(pack);
+} 
+
 int main()
 {
     Core core;
-    Input_Transmitter trans;
-    Input_Handler hand;
+    Transmitter trans;
+    Handler hand;
     Librarian libr;
     hand.counter = 0;
     std::string message;
@@ -111,12 +149,14 @@ int main()
     std::cout << '\n';
 
     trans.make_the_library(message, hand, libr);
-    int fixed_size = libr.send_packs.size();
+    int fixed_size = trans.libs_get_lib_size(libr);
     for (unsigned int i = 0; i < fixed_size; i++) {
-        libr.get_info(libr.take_one());
-        libr.delete_previous();
+        trans.libs_get_info(trans.libs_take_one(libr), libr); // Вывод всех пакетов с помощью только Transmtter
+        trans.libs_add_pack(trans.libs_take_one(libr), libr); // Вводим первый пакет в конец(чтобы можно было обратно собрать строку
+        trans.libs_delete_previous(libr);
     }
-    std::cout << "yeah";
+    std::cout << '\n';
+    std::cout << trans.unpack_lib(hand, libr);
     return 0;
 }
 
