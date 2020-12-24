@@ -91,7 +91,7 @@ void Handler::pack_the_message(std::string& message, std::vector <Packet>& send_
             }
             send_message[i].includes[j % 16] = message[j]; // j % 16 тк возвратит место в массиве
         }
-        send_message[i].header = Core::name + (data_pack << 14);
+        send_message[i].header = Core::name + (data_pack << 13);
         send_message[i].number = counter;
         counter++;
     }
