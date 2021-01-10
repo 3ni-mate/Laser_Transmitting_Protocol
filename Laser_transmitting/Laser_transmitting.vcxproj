@@ -141,6 +141,9 @@
   <ItemGroup>
     <ClCompile Include="Laser_transmitting.cpp" />
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="core.h" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

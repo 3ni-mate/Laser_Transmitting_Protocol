@@ -1,162 +1,263 @@
 ﻿// Laser_transmitting.cpp : Этот файл содержит функцию "main". Здесь начинается и заканчивается выполнение программы.
 // Есть небольшая проблема символ табуляции - исправлено 
+/* Небольшое ответвление
+1 - код пакета начала сообщения - 1001 = 9
+2 - код пакета конца сообщения - 1111 = 15
+3 - код пакета подтверждения сообщения - 1010 = 10
+4 - код 
+*/
 
 #include <string>
+#include <future>
+#include <chrono>
 #include <vector>
 #include <iostream>
+#include <Windows.h>
+#include "/Users/User/source/repos/Laser_transmitting/Laser_transmitting/core.h"
 
-class Core {
+/* Классы*/
+class Interface {
 public:
-    static const  int name = 2345;
+    virtual bool byte_catch(std::string& return_strng) = 0;
+    virtual bool recieve_the_packet(Packet& recieved) = 0;
+    virtual bool send_the_packet(const Packet& sent) = 0;
+   // virtual bool wait_for_confirmation() = 0;// z  Эта функция попросту не нужна
 };
-
-
-class Packet : public Core {
+class COM : public Interface {
+private : 
+    HANDLE serial_port;
+    _OVERLAPPED overlap; // структура работы с асинхронным портом
+    bool mode = false;
 public:
-    // static int counter ; // Можно вызывать как Packet::counter (статическая переменная принадлежит классу)
-    int header;
-    int number;
-    char includes[16];
+    bool success = true;
+    COM(LPCTSTR port);
+    bool recieve_the_packet(Packet& recieved);
+    bool send_the_packet(const Packet& sent);
+    bool byte_catch(std::string &return_strng); // COM + консольныйй ввод
+   // bool wait_for_confirmation();
 };
-
-
-class Librarian :public Core {
+class Intermediary {
+private:
+    Transmitter &transmitter;
+    Interface* _interface;
 public:
-    std::vector <Packet> send_packs;
-    Packet take_one(); // Выдает верхний пакет из массива
-    void delete_previous(); // Удаляет верхний пакет из массива
-    void get_info(const Packet& pack); // Показывает информацио о пакете
-    void add_pack(const Packet& pack); // Добавляет пакет в библиотеку
+    bool success = true;
+
+    Intermediary(Transmitter& transmitter_arg, Interface &_interface_arg) : transmitter(transmitter_arg), _interface(&_interface_arg) {}
+    bool recieve_the_message(); // Начинает принимать сообщения
+    bool send_the_message(); // Начинает отправлть сообщения
+    void wait_for_event();
 };
+/*Вспомогательные функции*/
+bool error_message(int num) {
+    std::cout << "Something went wrong - error # " << GetLastError() << " Packet # " << num << " was't deliverd " << std::endl <<
+        "Do you want to try again?";
+    int k;// То мы пробуем еще раз отправить пакет
+    std::cin >> k;
+    if (!k)  return false;
+    else return true;
+}
+std::string console_in() { // Функция вводит строку в консоль
+    std::string ret_value;
+    std::cin >> ret_value;
+    return ret_value;
+}
+void showmessage(const std::string message) {
+    std::cout << message;
+}
+void confirmation_error(int i) {
+    std::cout << "Something went wrong while recieving confirmation to packen #" << i << " last error is " << GetLastError;
+}
+void io_error() {
+    std::cout << "We have recieved data while transmitting message, your string has been deleted? here's recieved message ";
+}
 
 
-class Handler : public Core {
-public:
-    int counter = 0;
-    const int data_pack = 1;
-    void pack_the_message(std::string& message, std::vector <Packet>& send_message);
-    std::string unpack_the_message(Librarian& libr); // Функция возвращающая строку
-};
-
-
-class Transmitter : public Core {
-public:
-    void make_the_library(std::string& message, Handler& handler, Librarian& libs);
-    void libs_add_pack(const Packet& pack, Librarian& libr); // Процедура, нужная для взаимодействия с библиотекарем(чтобы библиотекаря полностью  скрыть из main)
-    
-    void libs_get_info(const Packet& pack, Librarian& libr); // Процедура, выводящая первый пакет заданного библиотекаря
-    void libs_delete_previous(Librarian& libr); // Процедура, удаляющая первый пакет заданного библиотекаря
-    unsigned int libs_get_lib_size(Librarian& libr); // Функция, выдающая размер библиотеки заданного библиотекаря
-    Packet libs_take_one(Librarian& libr); // Функция, выдающая пакет из заданного библиотекаря
-    std::string unpack_lib(Handler& hand, Librarian& libr);
-};
-
-
-
-
-
-void Transmitter::make_the_library(std::string& message, Handler& handler, Librarian& libs) {
-    while ((message[message.size() - 1] == ' ') || (message[message.size() - 1] == '\t')) { // Пробел и символ табуляции
-        message.erase(message.size() - 2, message.size() - 1);
+/*Конструктор для ком порта*/
+COM::COM(LPCTSTR port) {
+    serial_port = CreateFile(port,
+        GENERIC_READ | GENERIC_WRITE,
+        FILE_SHARE_READ | FILE_SHARE_WRITE,
+        NULL, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, 0);
+    if (serial_port == INVALID_HANDLE_VALUE) {// Если неправильно объявлен порт
+        success = false;
+        exit(10);
     }
-    handler.pack_the_message(message, libs.send_packs);// сразу передаем в процедуру массив для библиотекаря
+    DCB serial_parameters;
+    if (!GetCommState(serial_port, &serial_parameters)) { // Ошибка в тукущей настройке порта + выборка уже существующих
+        success = false;
+        exit(10);
+    }
+    serial_parameters.BaudRate = CBR_9600;// БОД
+    serial_parameters.ByteSize = 8;// 8 бит в 1 байте (???)
+    serial_parameters.StopBits = 0;// 1 последний бит
+    serial_parameters.Parity = 0;// нет проверки на четность
+    if (!SetCommState(serial_port, &serial_parameters)) {
+        success = false;
+        exit(10);
+    }
+    overlap.Internal = 0;
+    overlap.InternalHigh = 0;
+    overlap.Offset = 0;
+    overlap.OffsetHigh = 0;
+    overlap.hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 }
-void Transmitter::libs_add_pack(const Packet& pack, Librarian& libr) {
-    libr.add_pack(pack);
+bool COM::recieve_the_packet(Packet& recieved) {
+    DWORD DWbytes_to_read = sizeof(int);
+    DWORD DWread_bytes = 0;
+    bool check = ReadFile(serial_port, &recieved.header, DWbytes_to_read, &DWread_bytes, &overlap); // Асинхронное чтение
+    int time = clock();
+    while (!recieved.header) {// Пока не произошла запись
+        if ((time - clock()) > 2000) {
+            // вызываю функцию обработки прирыва канала
+        }
+    }
+    if (!check || (DWread_bytes != DWbytes_to_read)) { return false; } // здесь вызвать функцию повторного запроса сообщения
+    check = ReadFile(serial_port, &recieved.number, DWbytes_to_read, &DWread_bytes, &overlap); // Сравнение по номеру
+    while (!recieved.number) {// Пока не произошла запись
+        if ((time - clock()) > 2000) {
+            // вызываю функцию обработки прирыва канала
+        }
+    }
+    if (!check || (DWread_bytes != DWbytes_to_read)) { return false; }
+    DWbytes_to_read = sizeof(recieved.includes);
+    time = clock();
+    check = ReadFile(serial_port, &recieved.includes, DWbytes_to_read, &DWread_bytes, &overlap);
+    while (!recieved.includes[15]) {// Пока не произошла запись
+        if ((time - clock()) > 2000) {
+            // вызываю функцию обработки прирыва канала
+        }
+    }
+    if (!check || (DWread_bytes != DWbytes_to_read)) { return false; };
+   // if ((empty.header >> 12) == 15) { return 2; } // Если сообщение закончилось*/
+    return true;
 }
-void Transmitter::libs_get_info(const Packet& pack, Librarian& libr) {
-    libr.get_info(pack);
+bool COM::send_the_packet(const Packet& sent) { // Синхронно или асинхронно
+    DWORD DWsize = sizeof(sent.header);
+    DWORD DWwritten_bytes = 0;
+    int number = sent.header;
+    bool check = WriteFile(serial_port, &number, DWsize, &DWwritten_bytes, NULL); // Запись типа и имени
+    if ((!check) || (DWwritten_bytes != DWsize)) return false;
+    number = sent.number;
+    check = WriteFile(serial_port, &number, DWsize, &DWwritten_bytes, NULL); // Запись номера
+    if ((!check) || (DWwritten_bytes != DWsize)) return false;
+    DWsize = sizeof(sent.includes);
+    check = WriteFile(serial_port, sent.includes, DWsize, &DWwritten_bytes, NULL);// Запись содержимого
+    if ((!check) || (DWwritten_bytes != DWsize)) return false;
+    return true; // Все отправилось в целости и сохранности
 }
-void Transmitter::libs_delete_previous( Librarian& libr) {
-    libr.delete_previous();
-}
-unsigned int Transmitter::libs_get_lib_size(Librarian& libr) {
-    return libr.send_packs.size();
-}
-Packet Transmitter::libs_take_one(Librarian& libr) {
-    return libr.take_one();
-}
-std::string Transmitter::unpack_lib(Handler& hand, Librarian& libr) {
-    return hand.unpack_the_message(libr);
+bool COM::byte_catch(std::string &return_string) { // Добавить обработки технических неполадок 
+    DWORD  mask = 0;
+    std::string message;
+    bool check = 0;
+    SetCommMask(serial_port, EV_RXCHAR); // Реакция на появления значения в буффере
+    WaitCommEvent(serial_port, &mask, &overlap);
+    std::future<std::string> thread = std::async(std::launch::async, console_in);
+    while (true) { // просто бесконечный перебор
+        if (mask == EV_RXCHAR) {
+            return_string = "";
+            return true;
+        } // Поток для ввода с буфера(реакция на событие
+        if (thread.wait_for(std::chrono::milliseconds(100)) == std::future_status::ready) {//Поток для ввода с клавиатуры
+            return_string = thread.get();
+            return false; 
+        }
+    }
 }
 
-void Handler::pack_the_message(std::string& message, std::vector <Packet>& send_message) {
-    unsigned int Length = (message.size() + 15) / 16; // Округление в большую сторону
-    send_message.resize(Length);
-    for (unsigned int i = 0; i < Length; i++) {
-        for (unsigned int j = i * 16; j < (i + 1) * 16; j++) {
-            if (j > message.size() - 1) {
-                send_message[i].includes[j % 16] = 0;
-                continue;
+
+
+
+
+bool Intermediary::recieve_the_message() {
+    Packet current;
+    bool check = true;
+    while (transmitter.pack_return_type(current) != 15) { // Пока не пришел пакет конца сообщения
+        check = (*_interface).recieve_the_packet(current); // Прием пакета 
+        if (!check) {// Если произошел разрыв  соединения, то мы просто пропускаем текщую итерацию(следовательно пробуем его принять еще раз)
+            check = true; 
+            continue;
+        } 
+        transmitter.lib_add_pack(current); // Добавление пакета
+        (*_interface).send_the_packet(transmitter.pack_create_confirm_pack()); // Отправка пакета подтверждения
+    }
+    return true;
+}
+bool Intermediary::send_the_message() { 
+    unsigned int i = 0;
+    bool check = true;
+    Packet confirmation;
+    while (i < transmitter.lib_get_lib_size()) {
+        check = (*_interface).send_the_packet(transmitter.lib_take_one()); // Отправляем пакет
+        if (!check) { // Проверка на ошибки
+            check = true; // Уводим флаг из положения ошибки
+            error_message(i); // Выводим ошибку
+            continue; // Пытаемся еще раз отправить этот пакет
+        }
+        check = (*_interface).recieve_the_packet(confirmation); // Ждем подтверждения принятия
+        if (!check) { // Проблемы с подтверждением
+            check = true;
+            confirmation_error(i); // Лучше для этого свою процедуру написать
+            continue;
+        }
+        if (transmitter.pack_return_type(confirmation) != 10) {
+            // вся программа писалась в приоритете к чтению, поэтому если такая проблема возникает, то
+            while(transmitter.lib_get_lib_size() != 0 ){
+                transmitter.lib_delete_previous(); // Полностью очищаем библиотеку
             }
-            send_message[i].includes[j % 16] = message[j]; // j % 16 тк возвратит место в массиве
+            transmitter.lib_add_pack(confirmation); // Добавляем считанный пакет
+            check = recieve_the_message();// Дальнейшая обработка ошибок уже будет паранойей
+            io_error(); // процедура с текстом - во время передачи сообщения были приняты некоторые данные, поэтому передача была приостановлена, введите сообщение еще раз
+            return true;
         }
-        send_message[i].header = Core::name + (data_pack << 13);
-        send_message[i].number = counter;
-        counter++;
+        transmitter.lib_delete_previous();
     }
-}
-std::string Handler::unpack_the_message(Librarian& libr) {
-    std::string return_message;
-    for (int i = 0; i < libr.send_packs.size(); i++) {
-        for (int j = 0; j < 16; j++) {
-            return_message += libr.send_packs[i].includes[j];
-        }
-    }
-    return return_message;
+    return true;
 }
 
-Packet Librarian::take_one() {
-    if (send_packs.empty()) {
-        Packet empty;
-        empty.number = 0;
-        empty.header = 0;
-        return empty; // Возвращение пустого пакета
+
+
+
+void Intermediary::wait_for_event() {
+    std::string message = "";
+    bool check = true;
+    while (true) {
+        if ((*_interface).byte_catch(message)) {
+            check = recieve_the_message(); // Прием сообщения 
+            showmessage(transmitter.unpack_lib()); // Отображение сообщения
+        }
+        else { check = send_the_message(); }
     }
-    return send_packs[0]; // Возвращение первого пакета || При получении проверять пустой ли пакет или нет
 }
-void Librarian::delete_previous() {
-    if (send_packs.size() > 1) {
-        auto i = send_packs.cbegin(); // Тарабарщина, которая возвращает иератор вектора на 1 элемент ||  auto тк я хз что за тип функция возвращает
-        send_packs.erase(i);
-    }
-    else send_packs.clear();
-}
-void Librarian::get_info(const Packet& pack) {
-    std::cout << '\n';
-    std::cout << "<---------------------------------------------->" << '\n';
-    std::cout << "header --->  " << pack.header << '\n';
-    std::cout << "number --->  " << pack.number << '\n';
-    std::cout << "data   --->  ";
-    for (int i = 0; i < 16; i++) {
-        std::cout << pack.includes[i];
-    }
-    std::cout << "<" << '\n'; // Показывет на недостающие символы
-}
-void Librarian::add_pack(const Packet& pack) {
-    send_packs.push_back(pack);
-} 
+
 
 int main()
 {
-    Core core;
-    Transmitter trans;
     Handler hand;
     Librarian libr;
+    Transmitter trans(hand,libr);
+    LPCTSTR Port = L"COM5";
+    COM com(Port);
+    Intermediary inter(trans, com);
     hand.counter = 0;
-    std::string message;
-    std::getline(std::cin, message);
-    std::cout << '\n';
+    inter.wait_for_event();
 
-    trans.make_the_library(message, hand, libr);
-    int fixed_size = trans.libs_get_lib_size(libr);
+    /* Ожидание приема или передачи */
+
+   /* std::getline(std::cin, message);
+    std::cout << '\n';
+    trans.libs_make_the_library(message);
+    inter.send_the_message();
+
+   /*trans.make_the_library(message);
+    int fixed_size = trans.libs_get_lib_size();
     for (unsigned int i = 0; i < fixed_size; i++) {
-        trans.libs_get_info(trans.libs_take_one(libr), libr); // Вывод всех пакетов с помощью только Transmtter
-        trans.libs_add_pack(trans.libs_take_one(libr), libr); // Вводим первый пакет в конец(чтобы можно было обратно собрать строку
-        trans.libs_delete_previous(libr);
+        trans.libs_get_info(trans.libs_take_one()); // Вывод всех пакетов с помощью только Transmtter
+        trans.libs_add_pack(trans.libs_take_one()); // Вводим первый пакет в конец(чтобы можно было обратно собрать строку
+        trans.libs_delete_previous();
     }
     std::cout << '\n';
-    std::cout << trans.unpack_lib(hand, libr);
+    std::cout << trans.unpack_lib();*/
     return 0;
 }
 
