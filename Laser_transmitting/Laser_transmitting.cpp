@@ -242,7 +242,7 @@ int main()
     hand.counter = 0;
     inter.wait_for_event();
 
-    /* Ожидание приема или передачи */
+    /* Ожидание приема или передачи */ 
 
    /* std::getline(std::cin, message);
     std::cout << '\n';
