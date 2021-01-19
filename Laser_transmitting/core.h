@@ -1,4 +1,10 @@
 #pragma once
+#define MESSAGE_START 9
+#define MESSAGE_END 15
+#define MESSAGE_CONFIRMPTION 10
+#define MESSAGE_REQUEST 13
+#define MESSAGE_REQUEST_CONFIRMPTION 11
+#define MESSAGE_DATA
 #include <iostream>
 #include <string>
 #include <vector>
@@ -23,12 +29,12 @@ public:
 class Handler : public Core {
 public:
     int counter = 0;
-    const int data_pack = 1;
-    const int commit_pack = 10;
     void pack_the_message(std::string& message, std::vector <Packet>& send_message);
     Packet create_start_pack();
     Packet create_end_pack();
     Packet create_confirm_pack(int num);
+    Packet create_connection_request_pack();
+    Packet create_connection_request_answer_pack();
     std::string unpack_the_message(Librarian& libr); // ‘ункци€ возвращающа€ строку
     int return_type(Packet &input);
 };
@@ -41,6 +47,8 @@ public:
 
     }
     Packet pack_create_confirm_pack(); // ѕакет подтверждени€ сообщени€
+    Packet pack_create_request_pack();
+    Packet pack_create_request_answer_pack();
     int pack_return_type(Packet& input);
     void lib_make_the_library(std::string& message);
     void lib_add_pack(const Packet& pack); // ѕроцедура, нужна€ дл€ взаимодействи€ с библиотекарем(чтобы библиотекар€ полностью  скрыть из main)
@@ -72,6 +80,12 @@ unsigned int Transmitter::lib_get_lib_size() {
 Packet Transmitter::lib_take_one() {
     return _librarian.take_one();
 }
+Packet Transmitter::pack_create_request_pack() {
+    return _handler.create_connection_request_pack();
+}
+Packet Transmitter::pack_create_request_answer_pack() {
+    return _handler.create_connection_request_answer_pack();
+}
 std::string Transmitter::unpack_lib() {
     return _handler.unpack_the_message(_librarian);
 }
@@ -83,23 +97,37 @@ int Transmitter::pack_return_type(Packet& input) {
 int Handler::return_type(Packet& input) {
     return (input.header >> 12);
 }
+Packet Handler::create_connection_request_pack() {
+    Packet new_one;
+    new_one.header = Core::name + (MESSAGE_REQUEST << 12);
+    new_one.number = counter;
+    counter++;
+    return new_one;
+}
+Packet Handler::create_connection_request_answer_pack() {
+    Packet new_one;
+    new_one.header = Core::name + (MESSAGE_REQUEST_CONFIRMPTION << 12);
+    new_one.number = counter;
+    counter++;
+    return new_one;
+}
 Packet Handler::create_start_pack() {
     Packet new_one;
-    new_one.header = Core::name + (9 << 12);
+    new_one.header = Core::name + (MESSAGE_START << 12);
     new_one.number = counter;
     counter++;
     return new_one;
 }
 Packet Handler::create_end_pack() {
     Packet new_one;
-    new_one.header = Core::name + (15 << 12);
+    new_one.header = Core::name + (MESSAGE_END << 12);
     new_one.number = counter;
     counter++;
     return new_one;
 }
 Packet Handler::create_confirm_pack(int num) {
     Packet new_one;
-    new_one.header = Core::name + (commit_pack << 12);
+    new_one.header = Core::name + (MESSAGE_CONFIRMPTION << 12);
     new_one.number = num;
     counter++;
     return new_one;
@@ -116,7 +144,7 @@ void Handler::pack_the_message(std::string& message, std::vector <Packet>& send_
             }
             send_message[i].includes[j % 16] = message[j]; // j % 16 тк возвратит место в массиве
         }
-        send_message[i].header = Core::name + (data_pack << 12);
+        send_message[i].header = Core::name + ((MESSAGE_DATA + 1 - 1) << 12);
         send_message[i].number = counter;
         counter++;
     }

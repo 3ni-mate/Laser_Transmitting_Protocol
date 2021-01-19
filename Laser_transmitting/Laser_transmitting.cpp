@@ -4,9 +4,12 @@
 1 - код пакета начала сообщения - 1001 = 9
 2 - код пакета конца сообщения - 1111 = 15
 3 - код пакета подтверждения сообщения - 1010 = 10
-4 - код 
+4 - код пакета запроса связи - 1101 = 13
+5 - kод пакета подтверждения связи - 1011 - 11
+6 - код пакета данных - 1100 - 12
 */
-
+#define STANDART_WAITING_TIME_MS 2000
+#define EXTENDED_WAITING_TIME_MS 3000
 #include <string>
 #include <future>
 #include <chrono>
@@ -19,7 +22,7 @@
 class Interface {
 public:
     virtual bool byte_catch(std::string& return_strng) = 0;
-    virtual bool recieve_the_packet(Packet& recieved) = 0;
+    virtual bool recieve_the_packet(Packet& recieved, int time, bool correct_conection_break) = 0;
     virtual bool send_the_packet(const Packet& sent) = 0;
    // virtual bool wait_for_confirmation() = 0;// z  Эта функция попросту не нужна
 };
@@ -31,7 +34,7 @@ private :
 public:
     bool success = true;
     COM(LPCTSTR port);
-    bool recieve_the_packet(Packet& recieved);
+    bool recieve_the_packet(Packet& recieved, int time, bool correct_conection_break);
     bool send_the_packet(const Packet& sent);
     bool byte_catch(std::string &return_strng); // COM + консольныйй ввод
    // bool wait_for_confirmation();
@@ -47,6 +50,7 @@ public:
     bool recieve_the_message(); // Начинает принимать сообщения
     bool send_the_message(); // Начинает отправлть сообщения
     void wait_for_event();
+    bool establish_connection_for_input(); // Восстанавливает соединение для приемника (в эту функцию включу наводку по камере, когда придет вемя
 };
 /*Вспомогательные функции*/
 bool error_message(int num) {
@@ -102,20 +106,24 @@ COM::COM(LPCTSTR port) {
     overlap.OffsetHigh = 0;
     overlap.hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 }
-bool COM::recieve_the_packet(Packet& recieved) {
+bool COM::recieve_the_packet(Packet& recieved, int time, bool correct_conection_break) {
     DWORD DWbytes_to_read = sizeof(int);
     DWORD DWread_bytes = 0;
     bool check = ReadFile(serial_port, &recieved.header, DWbytes_to_read, &DWread_bytes, &overlap); // Асинхронное чтение
     int time = clock();
     while (!recieved.header) {// Пока не произошла запись
-        if ((time - clock()) > 2000) {
+        if ((time - clock()) > time) {
+            if (!correct_conection_break) { return false; }// Если на мне нужно восстанавливать канал связи(отправка в 1 сторону)
+            // Остановка чтения
             // вызываю функцию обработки прирыва канала
         }
     }
     if (!check || (DWread_bytes != DWbytes_to_read)) { return false; } // здесь вызвать функцию повторного запроса сообщения
     check = ReadFile(serial_port, &recieved.number, DWbytes_to_read, &DWread_bytes, &overlap); // Сравнение по номеру
     while (!recieved.number) {// Пока не произошла запись
-        if ((time - clock()) > 2000) {
+        if ((time - clock()) > time) {
+            if (!correct_conection_break) { return false; }// Если на мне нужно восстанавливать канал связи(отправка в 1 сторону)
+            // Осановка чтения
             // вызываю функцию обработки прирыва канала
         }
     }
@@ -124,12 +132,13 @@ bool COM::recieve_the_packet(Packet& recieved) {
     time = clock();
     check = ReadFile(serial_port, &recieved.includes, DWbytes_to_read, &DWread_bytes, &overlap);
     while (!recieved.includes[15]) {// Пока не произошла запись
-        if ((time - clock()) > 2000) {
+        if ((time - clock()) > time) {
+            if (!correct_conection_break) { return false; }// Если на мне нужно восстанавливать канал связи(отправка в 1 сторону)
+            // Остановка чтения
             // вызываю функцию обработки прирыва канала
         }
     }
     if (!check || (DWread_bytes != DWbytes_to_read)) { return false; };
-   // if ((empty.header >> 12) == 15) { return 2; } // Если сообщение закончилось*/
     return true;
 }
 bool COM::send_the_packet(const Packet& sent) { // Синхронно или асинхронно
@@ -169,11 +178,11 @@ bool COM::byte_catch(std::string &return_string) { // Добавить обра�
 
 
 
-bool Intermediary::recieve_the_message() {
+bool Intermediary::recieve_the_message() { // Нужно добавить таймер для выхода из цикла и восстановления подключения 
     Packet current;
     bool check = true;
     while (transmitter.pack_return_type(current) != 15) { // Пока не пришел пакет конца сообщения
-        check = (*_interface).recieve_the_packet(current); // Прием пакета 
+        check = (*_interface).recieve_the_packet(current, STANDART_WAITING_TIME_MS, true); // Прием пакета 
         if (!check) {// Если произошел разрыв  соединения, то мы просто пропускаем текщую итерацию(следовательно пробуем его принять еще раз)
             check = true; 
             continue;
@@ -194,7 +203,7 @@ bool Intermediary::send_the_message() {
             error_message(i); // Выводим ошибку
             continue; // Пытаемся еще раз отправить этот пакет
         }
-        check = (*_interface).recieve_the_packet(confirmation); // Ждем подтверждения принятия
+        check = (*_interface).recieve_the_packet(confirmation, STANDART_WAITING_TIME_MS, true); // Ждем подтверждения принятия
         if (!check) { // Проблемы с подтверждением
             check = true;
             confirmation_error(i); // Лучше для этого свою процедуру написать
@@ -214,10 +223,6 @@ bool Intermediary::send_the_message() {
     }
     return true;
 }
-
-
-
-
 void Intermediary::wait_for_event() {
     std::string message = "";
     bool check = true;
@@ -229,6 +234,25 @@ void Intermediary::wait_for_event() {
         else { check = send_the_message(); }
     }
 }
+bool Intermediary::establish_connection_for_input() { // Каждые 30 сек отправлять пакет 
+    Packet recieved;
+    bool check = true;
+    int start_time = clock();
+    while (true) {
+        check = (*_interface).send_the_packet(transmitter.pack_create_request_pack()); 
+        if ((*_interface).recieve_the_packet(recieved, EXTENDED_WAITING_TIME_MS, false)) {
+            return true; // Соединение восстановлено
+            // Можно сюда добавить несколько итераций для проверки
+        }
+        if (start_time - clock() == EXTENDED_WAITING_TIME_MS * 3) {
+            return false;
+        }
+    }
+
+}
+
+
+
 
 
 int main()
@@ -241,23 +265,6 @@ int main()
     Intermediary inter(trans, com);
     hand.counter = 0;
     inter.wait_for_event();
-
-    /* Ожидание приема или передачи */ 
-
-   /* std::getline(std::cin, message);
-    std::cout << '\n';
-    trans.libs_make_the_library(message);
-    inter.send_the_message();
-
-   /*trans.make_the_library(message);
-    int fixed_size = trans.libs_get_lib_size();
-    for (unsigned int i = 0; i < fixed_size; i++) {
-        trans.libs_get_info(trans.libs_take_one()); // Вывод всех пакетов с помощью только Transmtter
-        trans.libs_add_pack(trans.libs_take_one()); // Вводим первый пакет в конец(чтобы можно было обратно собрать строку
-        trans.libs_delete_previous();
-    }
-    std::cout << '\n';
-    std::cout << trans.unpack_lib();*/
     return 0;
 }
 
