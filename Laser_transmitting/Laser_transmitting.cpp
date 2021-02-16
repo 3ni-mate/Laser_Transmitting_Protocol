@@ -16,41 +16,62 @@
 #include <vector>
 #include <iostream>
 #include <Windows.h>
-#include "/Users/User/source/repos/Laser_transmitting/Laser_transmitting/core.h"
+#include "D:\repos\Laser_Transmitting_Protocol\Laser_transmitting\core.h"
 
 /* Классы*/
 class Interface {
+private: 
+    template< typename input>
+         bool recieve_packet_part(input& data, int time) = 0;
 public:
+    Interface() {};
     virtual bool byte_catch(std::string& return_strng) = 0;
     virtual bool recieve_the_packet(Packet& recieved, int time, bool correct_conection_break) = 0;
     virtual bool send_the_packet(const Packet& sent) = 0;
    // virtual bool wait_for_confirmation() = 0;// z  Эта функция попросту не нужна
 };
+
+class Aimer
+{
+private:
+    Packet confirm; // Зачем каждый раз вызывать новый пакет, если можно храните его
+    int conf_num; // Нос=мер нужного пакета
+    Interface* _interface; // Доступ к приему\ передачи
+public:
+    Aimer(Interface &_interface_args, Packet &conf, int conf_n) : _interface(&_interface_args), confirm(conf), conf_num(conf_n){ };
+    bool connect();
+};
+
+
 class COM : public Interface {
 private : 
     HANDLE serial_port;
     _OVERLAPPED overlap; // структура работы с асинхронным портом
-    bool mode = false;
+    Aimer& aim;
+    bool mode = false; 
+    template<typename input>
+         bool recieve_packet_part(input& data, int time);
 public:
     bool success = true;
-    COM(LPCTSTR port);
+    COM(LPCTSTR port, Aimer *aim_args);
     bool recieve_the_packet(Packet& recieved, int time, bool correct_conection_break);
     bool send_the_packet(const Packet& sent);
     bool byte_catch(std::string &return_strng); // COM + консольныйй ввод
-   // bool wait_for_confirmation();
+    void Set_aimer(Aimer& aim_args) { aim = aim_args; }
 };
+
+
 class Intermediary {
 private:
     Transmitter &transmitter;
     Interface* _interface;
+    Aimer &aim;
 public:
     bool success = true;
-
-    Intermediary(Transmitter& transmitter_arg, Interface &_interface_arg) : transmitter(transmitter_arg), _interface(&_interface_arg) {}
+    Intermediary(Transmitter& transmitter_arg, Interface& _interface_arg, Aimer& aim_args) : transmitter(transmitter_arg), _interface(&_interface_arg), aim(aim_args) {  }
     bool recieve_the_message(); // Начинает принимать сообщения
     bool send_the_message(); // Начинает отправлть сообщения
     void wait_for_event();
-    bool establish_connection_for_input(); // Восстанавливает соединение для приемника (в эту функцию включу наводку по камере, когда придет вемя
 };
 /*Вспомогательные функции*/
 bool error_message(int num) {
@@ -77,8 +98,16 @@ void io_error() {
 }
 
 
+
+
+
+
+bool Aimer::connect() {
+
+}
+
 /*Конструктор для ком порта*/
-COM::COM(LPCTSTR port) {
+COM::COM(LPCTSTR port, Aimer *aim_args) : aim(*aim_args) {
     serial_port = CreateFile(port,
         GENERIC_READ | GENERIC_WRITE,
         FILE_SHARE_READ | FILE_SHARE_WRITE,
@@ -107,39 +136,24 @@ COM::COM(LPCTSTR port) {
     overlap.hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 }
 bool COM::recieve_the_packet(Packet& recieved, int time, bool correct_conection_break) {
-    DWORD DWbytes_to_read = sizeof(int);
-    DWORD DWread_bytes = 0;
-    bool check = ReadFile(serial_port, &recieved.header, DWbytes_to_read, &DWread_bytes, &overlap); // Асинхронное чтение
-    int time = clock();
-    while (!recieved.header) {// Пока не произошла запись
-        if ((time - clock()) > time) {
-            if (!correct_conection_break) { return false; }// Если на мне нужно восстанавливать канал связи(отправка в 1 сторону)
-            // Остановка чтения
-            // вызываю функцию обработки прирыва канала
+
+    if (!recieve_packet_part(recieved.header, time)) { // Возникли проблемы при передаче
+        if (!correct_conection_break) {// Не нужно восстанавливать соединение
+            return false;
+        }
+        aim.connect();
+     }
+    if (!recieve_packet_part(recieved.number, time)) { // Возникли проблемы при передаче
+        if (!correct_conection_break) {// Не нужно восстанавливать соединение
+            return false;
         }
     }
-    if (!check || (DWread_bytes != DWbytes_to_read)) { return false; } // здесь вызвать функцию повторного запроса сообщения
-    check = ReadFile(serial_port, &recieved.number, DWbytes_to_read, &DWread_bytes, &overlap); // Сравнение по номеру
-    while (!recieved.number) {// Пока не произошла запись
-        if ((time - clock()) > time) {
-            if (!correct_conection_break) { return false; }// Если на мне нужно восстанавливать канал связи(отправка в 1 сторону)
-            // Осановка чтения
-            // вызываю функцию обработки прирыва канала
+        if (!recieve_packet_part(recieved.includes, time)) { // Возникли проблемы при передаче
+        if (!correct_conection_break) {// Не нужно восстанавливать соединение
+            return false;
         }
-    }
-    if (!check || (DWread_bytes != DWbytes_to_read)) { return false; }
-    DWbytes_to_read = sizeof(recieved.includes);
-    time = clock();
-    check = ReadFile(serial_port, &recieved.includes, DWbytes_to_read, &DWread_bytes, &overlap);
-    while (!recieved.includes[15]) {// Пока не произошла запись
-        if ((time - clock()) > time) {
-            if (!correct_conection_break) { return false; }// Если на мне нужно восстанавливать канал связи(отправка в 1 сторону)
-            // Остановка чтения
-            // вызываю функцию обработки прирыва канала
-        }
-    }
-    if (!check || (DWread_bytes != DWbytes_to_read)) { return false; };
-    return true;
+     }
+        return true;
 }
 bool COM::send_the_packet(const Packet& sent) { // Синхронно или асинхронно
     DWORD DWsize = sizeof(sent.header);
@@ -173,8 +187,20 @@ bool COM::byte_catch(std::string &return_string) { // Добавить обра�
         }
     }
 }
-
-
+template<typename input>
+bool COM::recieve_packet_part(input& data, int time) {
+    DWORD DWbytes_to_read = sizeof(data);
+    DWORD DWread_bytes = 0, DWasync_recieved = 0;
+    unsigned int inside_time = clock();
+    bool check = ReadFile(serial_port, &recieved.header, DWbytes_to_read, &DWread_bytes, &overlap); // Асинхронное чтение
+    do {
+        GetOverlappedResult(serial_port, &overlap, &DWasync_recieved, false); // Сколько байтов уже прочитали
+        if (clock() - inside_time == time) {
+            return false; // Превышен лимит времени на чтение
+        }
+    } while ((DWbytes_to_read != DWasync_recieved));
+        return true;
+}
 
 
 
@@ -204,6 +230,9 @@ bool Intermediary::send_the_message() {
             continue; // Пытаемся еще раз отправить этот пакет
         }
         check = (*_interface).recieve_the_packet(confirmation, STANDART_WAITING_TIME_MS, true); // Ждем подтверждения принятия
+        if (!check) {
+           
+        }
         if (!check) { // Проблемы с подтверждением
             check = true;
             confirmation_error(i); // Лучше для этого свою процедуру написать
@@ -234,22 +263,9 @@ void Intermediary::wait_for_event() {
         else { check = send_the_message(); }
     }
 }
-bool Intermediary::establish_connection_for_input() { // Каждые 30 сек отправлять пакет 
-    Packet recieved;
-    bool check = true;
-    int start_time = clock();
-    while (true) {
-        check = (*_interface).send_the_packet(transmitter.pack_create_request_pack()); 
-        if ((*_interface).recieve_the_packet(recieved, EXTENDED_WAITING_TIME_MS, false)) {
-            return true; // Соединение восстановлено
-            // Можно сюда добавить несколько итераций для проверки
-        }
-        if (start_time - clock() == EXTENDED_WAITING_TIME_MS * 3) {
-            return false;
-        }
-    }
 
-}
+
+
 
 
 
@@ -261,8 +277,10 @@ int main()
     Librarian libr;
     Transmitter trans(hand,libr);
     LPCTSTR Port = L"COM5";
-    COM com(Port);
-    Intermediary inter(trans, com);
+    COM com(Port, NULL);
+    Aimer aim(, trans.pack_create_confirm_pack(),11);
+    com.Set_aimer(aim);
+    Intermediary inter(trans, com,aim);
     hand.counter = 0;
     inter.wait_for_event();
     return 0;
