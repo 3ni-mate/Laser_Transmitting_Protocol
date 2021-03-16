@@ -4,7 +4,7 @@
 #define MESSAGE_CONFIRMPTION 10
 #define MESSAGE_REQUEST 13
 #define MESSAGE_REQUEST_CONFIRMPTION 11
-#define MESSAGE_DATA
+#define MESSAGE_DATA 12
 #include <iostream>
 #include <string>
 #include <vector>

@@ -22,7 +22,7 @@
 class Interface {
 private: 
     template< typename input>
-         bool recieve_packet_part(input& data, int time) = 0;
+    bool recieve_packet_part(input& data, int time) {};
 public:
     Interface() {};
     virtual bool byte_catch(std::string& return_strng) = 0;
@@ -103,7 +103,7 @@ void io_error() {
 
 
 bool Aimer::connect() {
-
+   // Абсолютно ен здешняя функция
 }
 
 /*Конструктор для ком порта*/
@@ -136,23 +136,21 @@ COM::COM(LPCTSTR port, Aimer *aim_args) : aim(*aim_args) {
     overlap.hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 }
 bool COM::recieve_the_packet(Packet& recieved, int time, bool correct_conection_break) {
-
     if (!recieve_packet_part(recieved.header, time)) { // Возникли проблемы при передаче
         if (!correct_conection_break) {// Не нужно восстанавливать соединение
             return false;
         }
-        aim.connect();
-     }
+    }
     if (!recieve_packet_part(recieved.number, time)) { // Возникли проблемы при передаче
         if (!correct_conection_break) {// Не нужно восстанавливать соединение
             return false;
         }
     }
-        if (!recieve_packet_part(recieved.includes, time)) { // Возникли проблемы при передаче
+    if (!recieve_packet_part(recieved.includes, time)) { // Возникли проблемы при передаче
         if (!correct_conection_break) {// Не нужно восстанавливать соединение
             return false;
         }
-     }
+    }
         return true;
 }
 bool COM::send_the_packet(const Packet& sent) { // Синхронно или асинхронно
@@ -192,7 +190,7 @@ bool COM::recieve_packet_part(input& data, int time) {
     DWORD DWbytes_to_read = sizeof(data);
     DWORD DWread_bytes = 0, DWasync_recieved = 0;
     unsigned int inside_time = clock();
-    bool check = ReadFile(serial_port, &recieved.header, DWbytes_to_read, &DWread_bytes, &overlap); // Асинхронное чтение
+    bool check = ReadFile(serial_port, &data, DWbytes_to_read, &DWread_bytes, &overlap); // Асинхронное чтение
     do {
         GetOverlappedResult(serial_port, &overlap, &DWasync_recieved, false); // Сколько байтов уже прочитали
         if (clock() - inside_time == time) {
@@ -278,7 +276,7 @@ int main()
     Transmitter trans(hand,libr);
     LPCTSTR Port = L"COM5";
     COM com(Port, NULL);
-    Aimer aim(, trans.pack_create_confirm_pack(),11);
+    Aimer aim(com, &trans.pack_create_confirm_pack(),11);
     com.Set_aimer(aim);
     Intermediary inter(trans, com,aim);
     hand.counter = 0;
